@@ -55,7 +55,14 @@ fun App(viewModel: ScreenViewModel = remember { ScreenViewModel().also { it.star
                         contentScale = ContentScale.Fit,
                     )
                 } else if (state.isStreaming) {
-                    CircularProgressIndicator()
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator()
+                        if (state.statusText.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(state.statusText, fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                 } else if (state.error != null) {
                     Text(
                         text = state.error,

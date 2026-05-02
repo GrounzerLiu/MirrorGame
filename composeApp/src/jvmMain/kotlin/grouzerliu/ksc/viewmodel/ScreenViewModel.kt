@@ -23,6 +23,7 @@ data class ScreenUiState(
     val devices: List<AdbDevice> = emptyList(),
     val selectedDevice: AdbDevice? = null,
     val isStreaming: Boolean = false,
+    val statusText: String = "",
     val currentFrame: ImageBitmap? = null,
     val frameWidth: Int = 0,
     val frameHeight: Int = 0,
@@ -80,6 +81,7 @@ class ScreenViewModel(
 
         scope.launch {
             val session = MirrorSession(device.serial)
+            session.onStatus { state = state.copy(statusText = it) }
             mirrorSession = session
 
             // Collect frames
@@ -117,6 +119,7 @@ class ScreenViewModel(
         frameJob = null
         state = state.copy(
             isStreaming = false,
+            statusText = "",
             currentFrame = null,
             frameWidth = 0,
             frameHeight = 0,
