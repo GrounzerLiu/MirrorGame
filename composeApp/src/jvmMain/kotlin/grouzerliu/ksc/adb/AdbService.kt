@@ -177,4 +177,81 @@ class AdbService(private val adbPath: String = "adb") {
             false
         }
     }
+
+    suspend fun resolveActivity(serial: String, packageName: String): String? = withContext(Dispatchers.IO) {
+        try {
+            val p = ProcessBuilder(adbPath, "-s", serial, "shell", "pm", "resolve-activity", "--brief", packageName)
+                .redirectErrorStream(true).start()
+            val out = p.inputStream.bufferedReader().readText()
+            p.waitFor(5, TimeUnit.SECONDS)
+            out.lines().firstOrNull { it.contains("/") && it.contains(".") }?.trim()
+        } catch (e: Exception) { null }
+    }
+
+    suspend fun launchApp(serial: String, packageName: String, displayId: Int? = null): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val activity = resolveActivity(serial, packageName)
+            val cmd = if (activity != null) {
+                val base = mutableListOf(adbPath, "-s", serial, "shell", "am", "start", "-n", activity)
+                if (displayId != null) { base.add("--display"); base.add(displayId.toString()) }
+                base
+            } else {
+                mutableListOf(adbPath, "-s", serial, "shell", "monkey", "-p", packageName, "-c", "android.intent.category.LAUNCHER", "1")
+            }
+            val p = ProcessBuilder(cmd).redirectErrorStream(true).start()
+            val out = p.inputStream.bufferedReader().readText()
+            p.waitFor(5, TimeUnit.SECONDS)
+            println("[adb] launch $packageName: $out")
+            true
+        } catch (e: Exception) { println("[adb] launch error: ${e.message}"); false }
+    }
+
+    suspend fun getDisplayIds(serial: String): List<Int> = withContext(Dispatchers.IO) {
+        try {
+            val p = ProcessBuilder(adbPath, "-s", serial, "shell", "dumpsys", "display")
+                .redirectErrorStream(true).start()
+            val out = p.inputStream.bufferedReader().readText()
+            p.waitFor(5, TimeUnit.SECONDS)
+            Regex("""displayId=(\d+)""").findAll(out).map { it.groupValues[1].toInt() }.toList().distinct()
+        } catch (e: Exception) { listOf(0) }
+    }
+
+    suspend fun sendTouch(serial: String, x: Int, y: Int) = withContext(Dispatchers.IO) {
+        try {
+            val p = ProcessBuilder(adbPath, "-s", serial, "shell", "input", "tap", x.toString(), y.toString())
+                .redirectErrorStream(true).start()
+            val out = p.inputStream.bufferedReader().readText()
+            val ok = p.waitFor(2, TimeUnit.SECONDS) && p.exitValue() == 0
+            if (!ok) println("[adb] sendTouch error: exit=${p.exitValue()} out=$out")
+        } catch (e: Exception) {
+            println("[adb] sendTouch exception: ${e.message}")
+        }
+    }
+
+    suspend fun sendBack(serial: String) = withContext(Dispatchers.IO) {
+        try {
+            val p = ProcessBuilder(adbPath, "-s", serial, "shell", "input", "keyevent", "KEYCODE_BACK")
+                .redirectErrorStream(true).start()
+            val out = p.inputStream.bufferedReader().readText()
+            val ok = p.waitFor(2, TimeUnit.SECONDS) && p.exitValue() == 0
+            if (!ok) println("[adb] sendBack error: exit=${p.exitValue()} out=$out")
+        } catch (e: Exception) {
+            println("[adb] sendBack exception: ${e.message}")
+        }
+    }
+
+    suspend fun listPackages(serial: String): List<InstalledApp> = withContext(Dispatchers.IO) {
+        try {
+            val process = ProcessBuilder(adbPath, "-s", serial, "shell", "pm", "list", "packages", "-3")
+                .redirectErrorStream(true).start()
+            val output = process.inputStream.bufferedReader().readText()
+            process.waitFor(5, TimeUnit.SECONDS)
+            output.lines().filter { it.startsWith("package:") }.map {
+                InstalledApp(packageName = it.removePrefix("package:").trim())
+            }
+        } catch (e: Exception) {
+            println("[adb] listPackages error: ${e.message}")
+            emptyList()
+        }
+    }
 }

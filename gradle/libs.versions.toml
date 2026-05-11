@@ -5,6 +5,7 @@ composeMultiplatform = "1.11.0-alpha04"
 junit = "4.13.2"
 kotlin = "2.3.20"
 kotlinx-coroutines = "1.10.2"
+gson = "2.11.0"
 material3 = "1.11.0-alpha04"
 
 [libraries]
@@ -20,6 +21,9 @@ compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "composeMul
 compose-components-resources = { module = "org.jetbrains.compose.components:components-resources", version.ref = "composeMultiplatform" }
 compose-uiToolingPreview = { module = "org.jetbrains.compose.ui:ui-tooling-preview", version.ref = "composeMultiplatform" }
 kotlinx-coroutinesSwing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
+gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
+javacv = { module = "org.bytedeco:javacv", version = "1.5.13" }
+ffmpeg = { module = "org.bytedeco:ffmpeg", version = "8.0.1-1.5.13" }
 
 [plugins]
 composeHotReload = { id = "org.jetbrains.compose.hot-reload", version.ref = "composeHotReload" }

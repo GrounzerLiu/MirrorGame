@@ -27,6 +27,10 @@ kotlin {
         jvmMain.dependencies {
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
+            implementation(libs.gson)
+            implementation(libs.javacv)
+            implementation(libs.ffmpeg)
+            implementation("org.bytedeco:ffmpeg:8.0.1-1.5.13:linux-x86_64")
         }
     }
 }

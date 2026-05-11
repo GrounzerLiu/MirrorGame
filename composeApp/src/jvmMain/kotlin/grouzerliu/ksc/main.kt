@@ -12,6 +12,6 @@ fun main() = application {
         title = "MirrorGame",
         state = windowState,
     ) {
-        App()
+        App(windowState = windowState)
     }
 }
