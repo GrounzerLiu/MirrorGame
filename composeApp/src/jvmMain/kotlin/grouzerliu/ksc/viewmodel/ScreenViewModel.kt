@@ -40,6 +40,8 @@ data class ScreenUiState(
     val launchedProject: LaunchProject? = null,
     val touchIndicators: List<TouchPoint> = emptyList(),
     val showTouchIndicator: Boolean = false,
+    val mousePassthrough: Boolean = true,
+    val mouseModeToggleKey: String = "",
 )
 
 data class TouchPoint(val x: Int, val y: Int, val pointerId: Int)
@@ -86,7 +88,13 @@ class ScreenViewModel(
                     val keyName = java.awt.event.KeyEvent.getKeyText(event.keyCode)
                     if (keyName.isNotBlank() && keyName != "Unknown") {
                         val isDown = event.id == java.awt.event.KeyEvent.KEY_PRESSED
-                        handleKeyEvent(keyName, isDown)
+                        // Check mouse mode toggle key first
+                        if (isDown && state.mouseModeToggleKey.isNotEmpty() && keyName == state.mouseModeToggleKey) {
+                            toggleMouseMode()
+                            true
+                        } else {
+                            handleKeyEvent(keyName, isDown)
+                        }
                     } else false
                 }
                 else -> false
@@ -338,6 +346,14 @@ class ScreenViewModel(
 
     fun toggleTouchIndicator() {
         state = state.copy(showTouchIndicator = !state.showTouchIndicator)
+    }
+
+    fun toggleMouseMode() {
+        state = state.copy(mousePassthrough = !state.mousePassthrough)
+    }
+
+    fun setMouseModeToggleKey(key: String) {
+        state = state.copy(mouseModeToggleKey = key)
     }
 
     private var wasShowingOverlays = false

@@ -7,6 +7,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.input.pointer.PointerButton
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -25,22 +28,39 @@ fun KeyBindDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            modifier = Modifier.width(340.dp).onPreviewKeyEvent { event ->
-                if (event.type == KeyEventType.KeyUp && capturing) {
-                    val name = event.key.toString().let { raw ->
-                        when {
-                            raw.startsWith("Key(") -> raw.removePrefix("Key(").removeSuffix(")")
-                            raw.startsWith("Key: ") -> raw.removePrefix("Key: ")
-                            else -> raw
+            modifier = Modifier.width(340.dp)
+                .onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyUp && capturing) {
+                        val name = event.key.toString().let { raw ->
+                            when {
+                                raw.startsWith("Key(") -> raw.removePrefix("Key(").removeSuffix(")")
+                                raw.startsWith("Key: ") -> raw.removePrefix("Key: ")
+                                else -> raw
+                            }
+                        }
+                        if (name.isNotBlank() && name != "Unknown") {
+                            key = name
+                            capturing = false
+                            true
+                        } else false
+                    } else false
+                }
+                .onPointerEvent(PointerEventType.Press) { event ->
+                    if (capturing) {
+                        val name = when (event.button) {
+                            PointerButton.Primary -> "MouseLeft"
+                            PointerButton.Secondary -> "MouseRight"
+                            PointerButton.Tertiary -> "MouseMiddle"
+                            PointerButton.Back -> "Mouse4"
+                            PointerButton.Forward -> "Mouse5"
+                            else -> null
+                        }
+                        if (name != null) {
+                            key = name
+                            capturing = false
                         }
                     }
-                    if (name.isNotBlank() && name != "Unknown") {
-                        key = name
-                        capturing = false
-                        true
-                    } else false
-                } else false
-            },
+                },
             shape = MaterialTheme.shapes.large,
             tonalElevation = 8.dp,
         ) {
@@ -112,27 +132,46 @@ fun JoystickKeyBindDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            modifier = Modifier.width(340.dp).onPreviewKeyEvent { event ->
-                if (event.type == KeyEventType.KeyUp && capturing != null) {
-                    val name = event.key.toString().let { raw ->
-                        when {
-                            raw.startsWith("Key(") -> raw.removePrefix("Key(").removeSuffix(")")
-                            raw.startsWith("Key: ") -> raw.removePrefix("Key: ")
-                            else -> raw
+            modifier = Modifier.width(340.dp)
+                .onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyUp && capturing != null) {
+                        val name = event.key.toString().let { raw ->
+                            when {
+                                raw.startsWith("Key(") -> raw.removePrefix("Key(").removeSuffix(")")
+                                raw.startsWith("Key: ") -> raw.removePrefix("Key: ")
+                                else -> raw
+                            }
                         }
+                        if (name.isNotBlank() && name != "Unknown") {
+                            when (capturing) {
+                                "up" -> up = name
+                                "down" -> down = name
+                                "left" -> left = name
+                                "right" -> right = name
+                            }
+                            capturing = null
+                            true
+                        } else false
+                    } else false
+                }
+                .onPointerEvent(PointerEventType.Press) { event ->
+                    val dir = capturing ?: return@onPointerEvent
+                    val name = when (event.button) {
+                        PointerButton.Primary -> "MouseLeft"
+                        PointerButton.Secondary -> "MouseRight"
+                        PointerButton.Tertiary -> "MouseMiddle"
+                        PointerButton.Back -> "Mouse4"
+                        PointerButton.Forward -> "Mouse5"
+                        else -> null
                     }
-                    if (name.isNotBlank() && name != "Unknown") {
-                        when (capturing) {
-                            "up" -> up = name
-                            "down" -> down = name
-                            "left" -> left = name
-                            "right" -> right = name
+                    if (name != null) {
+                        when (dir) {
+                            "up" -> up = name; "down" -> down = name
+                            "left" -> left = name; "right" -> right = name
                         }
                         capturing = null
-                        true
-                    } else false
-                } else false
-            },
+                    }
+                },
             shape = MaterialTheme.shapes.large,
             tonalElevation = 8.dp,
         ) {

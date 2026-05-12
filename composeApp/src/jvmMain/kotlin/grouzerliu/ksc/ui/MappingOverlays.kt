@@ -30,6 +30,9 @@ fun MappingEditorToolbar(
     onAddClick: () -> Unit,
     onAddJoystick: () -> Unit,
     onDone: () -> Unit,
+    mousePassthrough: Boolean = true,
+    mouseModeToggleKey: String = "",
+    onBindMouseToggle: () -> Unit = {},
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -43,6 +46,10 @@ fun MappingEditorToolbar(
         ) {
             Text("编辑映射", color = Color.White, fontSize = 14.sp)
             Spacer(Modifier.weight(1f))
+            FilledTonalButton(onClick = onBindMouseToggle,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)) {
+                Text(if (mousePassthrough) "鼠标直通" else "鼠标绑定", fontSize = 12.sp)
+            }
             FilledTonalButton(onClick = onAddClick,
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)) {
                 Text("点击", fontSize = 12.sp)

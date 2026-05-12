@@ -112,11 +112,11 @@ fun App(
                                     if (serial != null && dispW > 0 && dispH > 0) {
                                         awaitPointerEventScope {
                                             var active = false
+                                            var activeIsKeyBind = false
                                             while (true) {
                                                 val event = awaitPointerEvent()
                                                 val change = event.changes.firstOrNull() ?: continue
                                                 if (screenState.isEditingMappings) {
-                                                    // In edit mode, no touch forwarding
                                                     change.consume()
                                                     continue
                                                 }
@@ -126,20 +126,39 @@ fun App(
                                                         change.consume()
                                                         continue
                                                     }
+                                                    // Check mouse button bindings first
+                                                    val mouseName = event.button?.let { mouseButtonName(it) }
+                                                    if (mouseName != null && screenVm.handleKeyEvent(mouseName, true)) {
+                                                        active = true
+                                                        activeIsKeyBind = true
+                                                        change.consume()
+                                                        continue
+                                                    }
+                                                    // Mouse passthrough: simulate touch
+                                                    if (!screenState.mousePassthrough) {
+                                                        change.consume()
+                                                        continue
+                                                    }
                                                     val (dx, dy) = mapCoords(change.position.x, change.position.y, containerSize, dispW, dispH)
                                                     if (dx in 0..dispW && dy in 0..dispH) {
                                                         scope.launch { screenVm.handleTouchDown(dx, dy) }
                                                         active = true
                                                     }
                                                     change.consume()
-                                                } else if (active && event.type == PointerEventType.Move) {
+                                                } else if (active && !activeIsKeyBind && event.type == PointerEventType.Move) {
                                                     val (dx, dy) = mapCoords(change.position.x, change.position.y, containerSize, dispW, dispH)
                                                     scope.launch { screenVm.handleTouchMove(dx, dy) }
                                                     change.consume()
                                                 } else if (active && event.type == PointerEventType.Release) {
-                                                    val (dx, dy) = mapCoords(change.position.x, change.position.y, containerSize, dispW, dispH)
-                                                    scope.launch { screenVm.handleTouchUp(dx, dy) }
+                                                    val mouseName = event.button?.let { mouseButtonName(it) }
+                                                    if (activeIsKeyBind && mouseName != null) {
+                                                        scope.launch { screenVm.handleKeyEvent(mouseName, false) }
+                                                    } else if (!activeIsKeyBind) {
+                                                        val (dx, dy) = mapCoords(change.position.x, change.position.y, containerSize, dispW, dispH)
+                                                        scope.launch { screenVm.handleTouchUp(dx, dy) }
+                                                    }
                                                     active = false
+                                                    activeIsKeyBind = false
                                                     change.consume()
                                                 }
                                             }
@@ -191,6 +210,8 @@ fun App(
 
                 // Edit mode top toolbar
                 if (screenState.isEditingMappings) {
+                    var showMouseToggleBind by remember { mutableStateOf(false) }
+
                     MappingEditorToolbar(
                         onAddClick = { screenVm.addMappingInEditor(MappingType.CLICK) },
                         onAddJoystick = { screenVm.addMappingInEditor(MappingType.JOYSTICK) },
@@ -198,7 +219,25 @@ fun App(
                             val (pid, mappings) = screenVm.exitMappingEditor()
                             projectVm.saveProjectMappings(pid, mappings)
                         },
+                        mousePassthrough = screenState.mousePassthrough,
+                        mouseModeToggleKey = screenState.mouseModeToggleKey,
+                        onBindMouseToggle = { showMouseToggleBind = true },
                     )
+
+                    if (showMouseToggleBind) {
+                        KeyBindDialog(
+                            currentKeyName = screenState.mouseModeToggleKey,
+                            onBind = { keyName ->
+                                screenVm.setMouseModeToggleKey(keyName)
+                                showMouseToggleBind = false
+                            },
+                            onDelete = {
+                                screenVm.setMouseModeToggleKey("")
+                                showMouseToggleBind = false
+                            },
+                            onDismiss = { showMouseToggleBind = false },
+                        )
+                    }
                 }
 
                 // Draggable floating menu button
@@ -296,6 +335,15 @@ fun App(
             )
         }
     }
+}
+
+private fun mouseButtonName(button: PointerButton): String? = when (button) {
+    PointerButton.Primary -> "MouseLeft"
+    PointerButton.Secondary -> "MouseRight"
+    PointerButton.Tertiary -> "MouseMiddle"
+    PointerButton.Back -> "Mouse4"
+    PointerButton.Forward -> "Mouse5"
+    else -> null
 }
 
 /** Map composable coordinates to device video coordinates (ContentScale.Fit). */
