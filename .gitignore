@@ -19,3 +19,4 @@ captures
 node_modules/
 docs/superpowers/
 CLAUDE.md
+hs_err_pid*.log
