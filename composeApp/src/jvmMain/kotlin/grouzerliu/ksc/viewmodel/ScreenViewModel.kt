@@ -417,10 +417,14 @@ class ScreenViewModel(
         })
     }
 
+    private var stopping = false
+
     fun toggleMirror() {
-        if (state.isStreaming) {
+        if (state.isStreaming && !stopping) {
+            stopping = true
+            state = state.copy(isStreaming = false, statusText = "停止中...")
             scope.launch { stopMirror() }
-        } else {
+        } else if (!state.isStreaming && !stopping) {
             startMirror()
         }
     }
@@ -513,20 +517,23 @@ class ScreenViewModel(
     }
 
     private suspend fun stopMirror() {
-        stopKeyDispatcher()
-        mirrorSession?.stop()
-        mirrorSession = null
-        frameJob?.cancel()
-        frameJob = null
-        runCatching { lastBitmap?.close() }
-        lastBitmap = null
-        state = state.copy(
-            isStreaming = false,
-            statusText = "",
-            currentFrame = null,
-            frameWidth = 0,
-            frameHeight = 0,
-        )
+        try {
+            stopKeyDispatcher()
+            mirrorSession?.stop()
+            mirrorSession = null
+            frameJob?.cancel()
+            frameJob = null
+            runCatching { lastBitmap?.close() }
+            lastBitmap = null
+        } finally {
+            stopping = false
+            state = state.copy(
+                statusText = "",
+                currentFrame = null,
+                frameWidth = 0,
+                frameHeight = 0,
+            )
+        }
     }
 
     private var lastBitmap: Bitmap? = null
