@@ -305,6 +305,7 @@ fun App(
                     isEditingMappings = screenState.isEditingMappings,
                     showOverlays = screenState.showOverlays,
                     showTouchIndicator = screenState.showTouchIndicator,
+                    mousePassthrough = screenState.mousePassthrough,
                 )
 
                 // Key bind dialog for mapping editor
@@ -468,6 +469,7 @@ private fun MirrorMenuOverlay(
     isEditingMappings: Boolean = false,
     showOverlays: Boolean = true,
     showTouchIndicator: Boolean = false,
+    mousePassthrough: Boolean = true,
 ) {
     var offsetX by remember { mutableStateOf(0f) }
     var offsetY by remember { mutableStateOf(0f) }
@@ -487,7 +489,7 @@ private fun MirrorMenuOverlay(
         ) {
             SmallFloatingActionButton(
                 onClick = { showMenu = true },
-                containerColor = Color(0x88000000),
+                containerColor = if (mousePassthrough) Color(0x8844AA44) else Color(0x88CC6644),
                 contentColor = Color.White,
                 shape = CircleShape,
             ) {
