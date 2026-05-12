@@ -42,6 +42,7 @@ data class ScreenUiState(
     val showTouchIndicator: Boolean = false,
     val mousePassthrough: Boolean = true,
     val mouseModeToggleKey: String = "F8",
+    val mouseJoyCircleRadius: Float? = null, // null = auto (short side / 2), value = custom fraction of min(imgW, imgH)
 )
 
 data class TouchPoint(val x: Int, val y: Int, val pointerId: Int)
@@ -61,9 +62,25 @@ class ScreenViewModel(
     private val stateLock = Any()
 
     init {
-        // Load persisted mouse mode toggle key
-        val saved = runCatching { prefsFile.readText().trim() }.getOrDefault("F8")
-        if (saved.isNotEmpty()) state = state.copy(mouseModeToggleKey = saved)
+        val (key, radius) = loadPrefs()
+        if (key.isNotEmpty()) state = state.copy(mouseModeToggleKey = key, mouseJoyCircleRadius = radius)
+    }
+
+    private fun loadPrefs(): Pair<String, Float?> {
+        val props = java.util.Properties()
+        runCatching { prefsFile.inputStream().use { props.load(it) } }
+        val key = props.getProperty("mouseToggleKey", "F8")
+        val radius = props.getProperty("mouseJoyCircleRadius", "auto").let {
+            if (it == "auto") null else it.toFloatOrNull()
+        }
+        return key to radius
+    }
+
+    private fun savePrefs() {
+        val props = java.util.Properties()
+        props.setProperty("mouseToggleKey", state.mouseModeToggleKey)
+        props.setProperty("mouseJoyCircleRadius", state.mouseJoyCircleRadius?.toString() ?: "auto")
+        runCatching { prefsFile.outputStream().use { props.store(it, null) } }
     }
 
     private fun configDir(): java.io.File {
@@ -76,8 +93,16 @@ class ScreenViewModel(
     private val activeClickKeys = mutableSetOf<String>()
     private val joystickH = mutableMapOf<String, MutableList<String>>() // mappingId -> ["left"|"right", ...] stack, max 2
     private val joystickV = mutableMapOf<String, MutableList<String>>() // mappingId -> ["up"|"down", ...] stack, max 2
-    private val pointerIdMap = mutableMapOf<String, Int>() // mappingId -> pointerId
+    private val pointerIdMap = mutableMapOf<String, Int>()
     private var nextPointerId = 0
+    // Mouse joystick state
+    private var activeMouseJoy: String? = null
+    private var mouseJoyPid = 0
+    private var lastMouseJoyX = 0
+    private var lastMouseJoyY = 0
+    private var trackedMouseX = 0f // container coords, updated by pointerInput
+    private var trackedMouseY = 0f
+    val isMouseJoyActive: Boolean get() = activeMouseJoy != null
     private var awtKeyDispatcher: java.awt.KeyEventDispatcher? = null
 
     private fun activeTouchCount(): Int {
@@ -128,6 +153,7 @@ class ScreenViewModel(
         activeClickKeys.clear()
         joystickH.clear()
         joystickV.clear()
+        activeMouseJoy = null
     }
 
     fun startPolling() {
@@ -230,6 +256,13 @@ class ScreenViewModel(
 
         println("[key] $keyName ${if (isDown) "DOWN" else "UP"} (${mappings.size} mappings, video=${vw}x${vh}, container=${state.containerWidth}x${state.containerHeight})")
 
+        // Try MOUSE_JOYSTICK first
+        val mjMapping = mappings.find { it.type == MappingType.MOUSE_JOYSTICK && it.keyName == keyName }
+        if (mjMapping != null) {
+            println("[key] matched MOUSE_JOYSTICK id=${mjMapping.id}")
+            return handleMouseJoyKey(mjMapping, isDown)
+        }
+
         // Try CLICK mappings
         val clickMapping = mappings.find { it.type == MappingType.CLICK && it.keyName == keyName }
         if (clickMapping != null) {
@@ -250,6 +283,95 @@ class ScreenViewModel(
         println("[key] no match for '$keyName'")
         return false
     }
+
+    /** Handle keyboard-triggered mouse joystick (key down/up). */
+    private fun handleMouseJoyKey(m: KeyMapping, isDown: Boolean): Boolean {
+        if (isDown) {
+            handleMouseJoyDown(m.id)
+            // Immediately MOVE to current mouse position (keyboard has no mouse event)
+            handleMouseJoyMove(trackedMouseX, trackedMouseY)
+        } else {
+            handleMouseJoyUp()
+        }
+        return true
+    }
+
+    /** Called from Compose pointerInput on Enter/Move to track mouse position. */
+    fun updateMousePosition(containerX: Float, containerY: Float) {
+        trackedMouseX = containerX; trackedMouseY = containerY
+    }
+
+    // === Mouse joystick simulation ===
+
+    /** Start mouse joystick: touch DOWN at mapping center, then MOVE to computed position. */
+    fun handleMouseJoyDown(mappingId: String) {
+        val mappings = state.launchedProject?.keyMappings ?: return
+        val m = mappings.find { it.id == mappingId && it.type == MappingType.MOUSE_JOYSTICK } ?: return
+        val vw = state.frameWidth; val vh = state.frameHeight
+        if (vw <= 0 || vh <= 0) return
+        activeMouseJoy = mappingId
+        mouseJoyPid = acquirePointerId(mappingId)
+        val (cx, cy) = toVideoCoords(m.x, m.y, vw, vh)
+        val wasActive = activeTouchCount()
+        if (wasActive == 0) handleTouchDown(cx, cy, mouseJoyPid)
+        else handlePointerDown(cx, cy, mouseJoyPid)
+    }
+
+    /** Update mouse joystick position from container coordinates. */
+    fun handleMouseJoyMove(containerX: Float, containerY: Float) {
+        val mId = activeMouseJoy ?: return
+        val mappings = state.launchedProject?.keyMappings ?: return
+        val m = mappings.find { it.id == mId } ?: return
+        val (x, y) = mouseJoyPos(m, containerX, containerY)
+        lastMouseJoyX = x; lastMouseJoyY = y
+        handleTouchMove(x, y, mouseJoyPid)
+    }
+
+    /** End mouse joystick: touch UP at last known position (not mapping center). */
+    fun handleMouseJoyUp() {
+        val mId = activeMouseJoy ?: return
+        val x = lastMouseJoyX; val y = lastMouseJoyY
+        activeMouseJoy = null
+        val pid = releasePointerId(mId)
+        if (pid < 0) return
+        val remaining = activeTouchCount()
+        if (remaining == 0) handleTouchUp(x, y, pid)
+        else handlePointerUp(x, y, pid)
+    }
+
+    /** Mouse-joy circle radius in container pixels (auto or custom). */
+    fun mouseJoyCircleRadiusPx(): Float {
+        val cw = state.containerWidth; val ch = state.containerHeight
+        val vw = state.frameWidth; val vh = state.frameHeight
+        if (cw <= 0 || ch <= 0 || vw <= 0 || vh <= 0) return 0f
+        val scale = kotlin.math.min(cw.toFloat() / vw, ch.toFloat() / vh)
+        val imgW = vw * scale; val imgH = vh * scale
+        return when (val cr = state.mouseJoyCircleRadius) {
+            null -> kotlin.math.min(imgW, imgH) / 2f
+            else -> kotlin.math.min(imgW, imgH) * cr
+        }
+    }
+
+    /** Compute touch position from screen-center circle → mouse offset.
+     *  Circle: centered at preview image center, diameter = short side of the rendered preview.
+     *  Touch range matches the overlay ring (same as joystick). */
+    private fun mouseJoyPos(m: KeyMapping, containerX: Float, containerY: Float): Pair<Int, Int> {
+        val cw = state.containerWidth; val ch = state.containerHeight
+        val vw = state.frameWidth; val vh = state.frameHeight
+        val circleR = mouseJoyCircleRadiusPx()
+        if (cw <= 0 || ch <= 0 || vw <= 0 || vh <= 0 || circleR <= 0f) return Pair(0, 0)
+
+        val screenCx = cw / 2f; val screenCy = ch / 2f
+        val nx = ((containerX - screenCx) / circleR).coerceIn(-1f, 1f)
+        val ny = ((containerY - screenCy) / circleR).coerceIn(-1f, 1f)
+
+        val (vCx, vCy) = toVideoCoords(m.x, m.y, vw, vh)
+        val scale = kotlin.math.min(cw.toFloat() / vw, ch.toFloat() / vh)
+        val maxR = (kotlin.math.min(cw, ch) * m.radius / scale).toInt()
+        val vDx = (nx * maxR).toInt(); val vDy = (ny * maxR).toInt()
+        return Pair((vCx + vDx).coerceIn(0, vw - 1), (vCy + vDy).coerceIn(0, vh - 1))
+    }
+
 
     private fun handleClickKey(m: KeyMapping, isDown: Boolean, x: Int, y: Int): Boolean {
         if (isDown) {
@@ -368,7 +490,12 @@ class ScreenViewModel(
 
     fun setMouseModeToggleKey(key: String) {
         state = state.copy(mouseModeToggleKey = key)
-        runCatching { prefsFile.writeText(key) }
+        savePrefs()
+    }
+
+    fun setMouseJoyCircleRadius(radius: Float?) {
+        state = state.copy(mouseJoyCircleRadius = radius)
+        savePrefs()
     }
 
     private var wasShowingOverlays = false
@@ -408,6 +535,12 @@ class ScreenViewModel(
     fun updateJoystickMappingInEditor(id: String, keyUp: String, keyDown: String, keyLeft: String, keyRight: String, radius: Float) {
         state = state.copy(editorMappings = state.editorMappings.map {
             if (it.id == id) it.copy(keyUp = keyUp, keyDown = keyDown, keyLeft = keyLeft, keyRight = keyRight, radius = radius) else it
+        })
+    }
+
+    fun updateMappingRadius(id: String, radius: Float) {
+        state = state.copy(editorMappings = state.editorMappings.map {
+            if (it.id == id) it.copy(radius = radius.coerceIn(0.05f, 0.5f)) else it
         })
     }
 

@@ -2,7 +2,7 @@ package grouzerliu.mirrorgame.model
 
 import kotlin.random.Random
 
-enum class MappingType { CLICK, JOYSTICK }
+enum class MappingType { CLICK, JOYSTICK, MOUSE_JOYSTICK }
 
 data class KeyMapping(
     val id: String = Random.nextInt().let { if (it < 0) -it else it }.toString(16),
@@ -20,6 +20,7 @@ data class KeyMapping(
     val displayKeys: String
         get() = when (type) {
             MappingType.CLICK -> keyName
+            MappingType.MOUSE_JOYSTICK -> keyName
             MappingType.JOYSTICK -> {
                 val parts = listOf(keyUp, keyDown, keyLeft, keyRight).filter { it.isNotEmpty() }
                 if (parts.isEmpty()) "" else parts.joinToString("/")

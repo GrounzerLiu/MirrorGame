@@ -29,10 +29,12 @@ import grouzerliu.mirrorgame.model.MappingType
 fun MappingEditorToolbar(
     onAddClick: () -> Unit,
     onAddJoystick: () -> Unit,
+    onAddMouseJoy: () -> Unit,
     onDone: () -> Unit,
     mousePassthrough: Boolean = true,
     mouseModeToggleKey: String = "",
     onBindMouseToggle: () -> Unit = {},
+    onMouseJoyCircleSettings: () -> Unit = {},
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -58,6 +60,14 @@ fun MappingEditorToolbar(
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)) {
                 Text("摇杆", fontSize = 12.sp)
             }
+            FilledTonalButton(onClick = onAddMouseJoy,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)) {
+                Text("鼠杆", fontSize = 12.sp)
+            }
+            FilledTonalButton(onClick = onMouseJoyCircleSettings,
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
+                Text("⊙", fontSize = 14.sp)
+            }
             Button(onClick = onDone,
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)) {
                 Text("完成", fontSize = 12.sp)
@@ -81,7 +91,8 @@ fun MappingEditOverlay(
     val ch = containerSize.height.toFloat()
     val cx = cw * mapping.x
     val cy = ch * mapping.y
-    val dotSize = if (mapping.type == MappingType.JOYSTICK) 60f else 44f
+    val isJoy = mapping.type == MappingType.JOYSTICK || mapping.type == MappingType.MOUSE_JOYSTICK
+    val dotSize = if (isJoy) 60f else 44f
 
     // Keep latest values accessible from pointerInput's stale closure
     val currentMapping by rememberUpdatedState(mapping)
@@ -98,8 +109,8 @@ fun MappingEditOverlay(
         x = (cx - dotSize / 2f).toInt().dp,
         y = (cy - dotSize / 2f).toInt().dp,
     )) {
-        // Joystick outer ring
-        if (mapping.type == MappingType.JOYSTICK) {
+        // Joystick outer ring (also for mouse joystick)
+        if (isJoy) {
             val ringR = cw.coerceAtMost(ch) * mapping.radius
             Box(
                 modifier = Modifier
@@ -107,7 +118,7 @@ fun MappingEditOverlay(
                         y = ((dotSize - ringR * 2) / 2f).toInt().dp)
                     .size((ringR * 2).toInt().dp)
                     .clip(CircleShape)
-                    .border(2.dp, Color(0x88FFFFFF), CircleShape),
+                    .border(2.dp, if (mapping.type == MappingType.MOUSE_JOYSTICK) Color(0x88FF4444) else Color(0x664488FF), CircleShape),
             )
         }
 
@@ -132,7 +143,8 @@ fun MappingEditOverlay(
                 .size(dotDp)
                 .clip(CircleShape)
                 .background(
-                    if (mapping.type == MappingType.JOYSTICK) Color(0xCC4488FF)
+                    if (mapping.type == MappingType.MOUSE_JOYSTICK) Color(0xCCFF8800)
+                    else if (isJoy) Color(0xCC4488FF)
                     else Color(0xCCFF4444)
                 )
                 .onPointerEvent(PointerEventType.Enter) { isHovered = true }
@@ -187,7 +199,11 @@ fun MappingEditOverlay(
         ) {
             // Always show type name only
             Text(
-                text = if (mapping.type == MappingType.JOYSTICK) "摇" else "点",
+                text = when (mapping.type) {
+                    MappingType.JOYSTICK -> "摇"
+                    MappingType.MOUSE_JOYSTICK -> "鼠"
+                    else -> "点"
+                },
                 color = Color.White,
                 fontSize = 12.sp,
                 textAlign = TextAlign.Center,
@@ -199,6 +215,7 @@ fun MappingEditOverlay(
 /** Build hover tooltip text from mapping key bindings. */
 internal fun tooltipText(m: KeyMapping): String = when (m.type) {
     MappingType.CLICK -> m.keyName
+    MappingType.MOUSE_JOYSTICK -> m.keyName
     MappingType.JOYSTICK -> {
         val parts = listOfNotNull(
             if (m.keyUp.isNotEmpty()) "↑${m.keyUp}" else null,

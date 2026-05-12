@@ -113,9 +113,16 @@ fun App(
                                         awaitPointerEventScope {
                                             var active = false
                                             var activeIsKeyBind = false
+                                            var activeIsMouseJoy = false
+                                            var mouseX = 0f; var mouseY = 0f // tracked from Move/Enter
                                             while (true) {
                                                 val event = awaitPointerEvent()
                                                 val change = event.changes.firstOrNull() ?: continue
+                                                // Track mouse position for keyboard-triggered mouse joystick
+                                                if (event.type == PointerEventType.Enter || event.type == PointerEventType.Move) {
+                                                    mouseX = change.position.x; mouseY = change.position.y
+                                                    screenVm.updateMousePosition(mouseX, mouseY)
+                                                }
                                                 if (screenVm.state.isEditingMappings) {
                                                     change.consume()
                                                     continue
@@ -123,6 +130,22 @@ fun App(
                                                 if (!active && event.type == PointerEventType.Press) {
                                                     // Check mouse button bindings first
                                                     val mouseName = event.button?.let { mouseButtonName(it) }
+                                                    if (mouseName != null) {
+                                                        // MOUSE_JOYSTICK mapping check
+                                                        val mj = screenVm.state.launchedProject?.keyMappings?.find {
+                                                            it.type == MappingType.MOUSE_JOYSTICK && it.keyName == mouseName
+                                                        }
+                                                        if (mj != null) {
+                                                            scope.launch {
+                                                                screenVm.handleMouseJoyDown(mj.id)
+                                                                screenVm.handleMouseJoyMove(mouseX, mouseY)
+                                                            }
+                                                            active = true
+                                                            activeIsMouseJoy = true
+                                                            change.consume()
+                                                            continue
+                                                        }
+                                                    }
                                                     if (mouseName != null && screenVm.handleKeyEvent(mouseName, true)) {
                                                         active = true
                                                         activeIsKeyBind = true
@@ -140,13 +163,19 @@ fun App(
                                                         active = true
                                                     }
                                                     change.consume()
-                                                } else if (active && !activeIsKeyBind && event.type == PointerEventType.Move) {
-                                                    val (dx, dy) = mapCoords(change.position.x, change.position.y, containerSize, dispW, dispH)
-                                                    scope.launch { screenVm.handleTouchMove(dx, dy) }
+                                                } else if ((active || screenVm.isMouseJoyActive) && event.type == PointerEventType.Move) {
+                                                    if (activeIsMouseJoy || screenVm.isMouseJoyActive) {
+                                                        scope.launch { screenVm.handleMouseJoyMove(change.position.x, change.position.y) }
+                                                    } else if (!activeIsKeyBind) {
+                                                        val (dx, dy) = mapCoords(change.position.x, change.position.y, containerSize, dispW, dispH)
+                                                        scope.launch { screenVm.handleTouchMove(dx, dy) }
+                                                    }
                                                     change.consume()
                                                 } else if (active && event.type == PointerEventType.Release) {
                                                     val mouseName = event.button?.let { mouseButtonName(it) }
-                                                    if (activeIsKeyBind && mouseName != null) {
+                                                    if (activeIsMouseJoy) {
+                                                        scope.launch { screenVm.handleMouseJoyUp() }
+                                                    } else if (activeIsKeyBind && mouseName != null) {
                                                         scope.launch { screenVm.handleKeyEvent(mouseName, false) }
                                                     } else if (!activeIsKeyBind) {
                                                         val (dx, dy) = mapCoords(change.position.x, change.position.y, containerSize, dispW, dispH)
@@ -154,6 +183,7 @@ fun App(
                                                     }
                                                     active = false
                                                     activeIsKeyBind = false
+                                                    activeIsMouseJoy = false
                                                     change.consume()
                                                 }
                                             }
@@ -175,6 +205,22 @@ fun App(
                                         .clip(CircleShape)
                                         .background(color)
                                         .border(2.dp, Color.White, CircleShape),
+                                )
+                            }
+                        }
+
+                        // Mouse joy circle — shown in edit mode only
+                        if (screenState.isEditingMappings) {
+                            val circleRPx = screenVm.mouseJoyCircleRadiusPx()
+                            if (circleRPx > 0f) {
+                                val density = LocalDensity.current
+                                val circleRDp = with(density) { circleRPx.toDp() }
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.Center)
+                                        .size(circleRDp * 2)
+                                        .clip(CircleShape)
+                                        .border(1.dp, Color(0x44FFFFFF), CircleShape),
                                 )
                             }
                         }
@@ -206,10 +252,12 @@ fun App(
                 // Edit mode top toolbar
                 if (screenState.isEditingMappings) {
                     var showMouseToggleBind by remember { mutableStateOf(false) }
+                    var showMouseJoyCircleSettings by remember { mutableStateOf(false) }
 
                     MappingEditorToolbar(
                         onAddClick = { screenVm.addMappingInEditor(MappingType.CLICK) },
                         onAddJoystick = { screenVm.addMappingInEditor(MappingType.JOYSTICK) },
+                        onAddMouseJoy = { screenVm.addMappingInEditor(MappingType.MOUSE_JOYSTICK) },
                         onDone = {
                             val (pid, mappings) = screenVm.exitMappingEditor()
                             projectVm.saveProjectMappings(pid, mappings)
@@ -217,6 +265,7 @@ fun App(
                         mousePassthrough = screenState.mousePassthrough,
                         mouseModeToggleKey = screenState.mouseModeToggleKey,
                         onBindMouseToggle = { showMouseToggleBind = true },
+                        onMouseJoyCircleSettings = { showMouseJoyCircleSettings = true },
                     )
 
                     if (showMouseToggleBind) {
@@ -231,6 +280,17 @@ fun App(
                                 showMouseToggleBind = false
                             },
                             onDismiss = { showMouseToggleBind = false },
+                        )
+                    }
+
+                    if (showMouseJoyCircleSettings) {
+                        MouseJoyCircleDialog(
+                            circleRadius = screenState.mouseJoyCircleRadius,
+                            onSet = { radius ->
+                                screenVm.setMouseJoyCircleRadius(radius)
+                                showMouseJoyCircleSettings = false
+                            },
+                            onDismiss = { showMouseJoyCircleSettings = false },
                         )
                     }
                 }
@@ -254,6 +314,25 @@ fun App(
                             currentKeyName = mapping.keyName,
                             onBind = { keyName: String ->
                                 screenVm.updateMappingInEditor(mapping.id, keyName)
+                                editingMappingId = null
+                            },
+                            onDelete = {
+                                screenVm.removeMappingInEditor(mapping.id)
+                                editingMappingId = null
+                            },
+                            onDismiss = { editingMappingId = null },
+                        )
+                        MappingType.MOUSE_JOYSTICK -> KeyBindDialog(
+                            currentKeyName = mapping.keyName,
+                            showRadius = true,
+                            currentRadius = mapping.radius,
+                            onBind = { keyName ->
+                                screenVm.updateMappingInEditor(mapping.id, keyName)
+                                editingMappingId = null
+                            },
+                            onBindRadius = { keyName, radius ->
+                                screenVm.updateMappingInEditor(mapping.id, keyName)
+                                screenVm.updateMappingRadius(mapping.id, radius)
                                 editingMappingId = null
                             },
                             onDelete = {
@@ -433,6 +512,58 @@ private fun MirrorMenuOverlay(
             }
         }
     }
+}
+
+@Composable
+private fun MouseJoyCircleDialog(
+    circleRadius: Float?,
+    onSet: (Float?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var isAuto by remember { mutableStateOf(circleRadius == null) }
+    var customValue by remember { mutableStateOf(circleRadius ?: 0.5f) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("鼠标摇杆圆") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("控制鼠标移动的映射范围", fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = isAuto, onClick = { isAuto = true })
+                        Text("自动", fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp))
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = !isAuto, onClick = { isAuto = false })
+                        Text("自定义", fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp))
+                    }
+                }
+
+                if (!isAuto) {
+                    Text("直径 = 画面短边 × %.0f%%".format(customValue * 2 * 100), fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Slider(
+                        value = customValue,
+                        onValueChange = { customValue = it },
+                        valueRange = 0.05f..1.0f,
+                    )
+                } else {
+                    Text("直径 = 画面短边 (自动)", fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onSet(if (isAuto) null else customValue) }) { Text("确定") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        },
+    )
 }
 
 @Composable

@@ -22,6 +22,9 @@ fun KeyBindDialog(
     onBind: (String) -> Unit,
     onDelete: () -> Unit,
     onDismiss: () -> Unit,
+    showRadius: Boolean = false,
+    currentRadius: Float = 0.15f,
+    onBindRadius: ((keyName: String, radius: Float) -> Unit)? = null,
 ) {
     var key by remember { mutableStateOf(currentKeyName) }
     var capturing by remember { mutableStateOf(false) }
@@ -105,13 +108,42 @@ fun KeyBindDialog(
                     }
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { onBind(key) }) { Text("确定") }
-                    TextButton(onClick = onDismiss) { Text("取消") }
-                    Spacer(Modifier.weight(1f))
-                    TextButton(onClick = onDelete, colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error,
-                    )) { Text("删除") }
+                // Optional radius slider for MOUSE_JOYSTICK
+                if (showRadius) {
+                    var r by remember { mutableFloatStateOf(currentRadius) }
+                    HorizontalDivider()
+                    Text("摇杆范围", style = MaterialTheme.typography.titleSmall, fontSize = 13.sp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text("%.0f%%".format(r * 100), fontSize = 13.sp, modifier = Modifier.width(44.dp))
+                        Slider(
+                            value = r,
+                            onValueChange = { r = it },
+                            valueRange = 0.05f..0.5f,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { onBindRadius?.invoke(key, r) }) { Text("确定") }
+                        TextButton(onClick = onDismiss) { Text("取消") }
+                        Spacer(Modifier.weight(1f))
+                        TextButton(onClick = onDelete, colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error,
+                        )) { Text("删除") }
+                    }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { onBind(key) }) { Text("确定") }
+                        TextButton(onClick = onDismiss) { Text("取消") }
+                        Spacer(Modifier.weight(1f))
+                        TextButton(onClick = onDelete, colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error,
+                        )) { Text("删除") }
+                    }
                 }
             }
         }

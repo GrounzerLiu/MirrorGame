@@ -111,6 +111,24 @@ fun KeyMappingEditor(
                 },
                 onDismiss = { editingMapping = null },
             )
+            MappingType.MOUSE_JOYSTICK -> KeyBindDialog(
+                currentKeyName = mapping.keyName,
+                showRadius = true,
+                currentRadius = mapping.radius,
+                onBind = { keyName ->
+                    onEditMapping(mapping.copy(keyName = keyName))
+                    editingMapping = null
+                },
+                onBindRadius = { keyName, radius ->
+                    onEditMapping(mapping.copy(keyName = keyName, radius = radius))
+                    editingMapping = null
+                },
+                onDelete = {
+                    onRemoveMapping(mapping.id)
+                    editingMapping = null
+                },
+                onDismiss = { editingMapping = null },
+            )
             MappingType.JOYSTICK -> JoystickKeyBindDialog(
                 keyUp = mapping.keyUp,
                 keyDown = mapping.keyDown,
@@ -163,7 +181,8 @@ private fun MappingOverlay(
     val cwPx = with(density) { containerWidth.toPx() }
     val chPx = with(density) { containerHeight.toPx() }
 
-    val dotSize = if (mapping.type == MappingType.JOYSTICK) 44.dp else 36.dp
+    val isJoy = mapping.type == MappingType.JOYSTICK || mapping.type == MappingType.MOUSE_JOYSTICK
+    val dotSize = if (isJoy) 44.dp else 36.dp
     val xOff = containerWidth * mapping.x
     val yOff = containerHeight * mapping.y
 
@@ -183,14 +202,14 @@ private fun MappingOverlay(
             .size(dotSize)
     ) {
         // Joystick: outer ring + inner dot
-        if (mapping.type == MappingType.JOYSTICK) {
+        if (isJoy) {
             val ringSize = containerWidth * mapping.radius * 2
             Box(
                 modifier = Modifier
                     .offset(x = -ringSize / 2 + dotSize / 2, y = -ringSize / 2 + dotSize / 2)
                     .size(ringSize)
                     .clip(CircleShape)
-                    .border(2.dp, Color(0x88FFFFFF), CircleShape),
+                    .border(2.dp, if (mapping.type == MappingType.MOUSE_JOYSTICK) Color(0x88FF4444) else Color(0x664488FF), CircleShape),
             )
         }
 
@@ -215,7 +234,7 @@ private fun MappingOverlay(
                 .fillMaxSize()
                 .clip(CircleShape)
                 .background(
-                    if (mapping.type == MappingType.JOYSTICK) Color(0xCC4488FF)
+                    if (isJoy) Color(0xCC4488FF)
                     else Color(0xCCFF4444)
                 )
                 .onPointerEvent(PointerEventType.Enter) { isHovered = true }
@@ -266,7 +285,11 @@ private fun MappingOverlay(
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                text = if (mapping.type == MappingType.JOYSTICK) "摇" else "点",
+                text = when (mapping.type) {
+                    MappingType.JOYSTICK -> "摇"
+                    MappingType.MOUSE_JOYSTICK -> "鼠"
+                    else -> "点"
+                },
                 color = Color.White,
                 fontSize = 10.sp,
                 textAlign = TextAlign.Center,
