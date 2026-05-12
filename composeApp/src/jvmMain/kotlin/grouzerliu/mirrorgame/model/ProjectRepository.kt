@@ -57,8 +57,8 @@ object ProjectRepository {
         val result = mutableListOf<LaunchProject>()
         dir.listFiles { f -> f.name.endsWith(".json") && f.name != "prefs.txt" }?.forEach { f ->
             try {
-                val p: LaunchProject = gson.fromJson(f.readText(), LaunchProject::class.java)
-                if (p != null) result.add(p)
+                val p = gson.fromJson(f.readText(), LaunchProject::class.java)
+                result.add(p)
             } catch (_: Exception) {}
         }
         return result
