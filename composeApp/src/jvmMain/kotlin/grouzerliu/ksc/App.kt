@@ -108,7 +108,7 @@ fun App(
                                     containerSize = it
                                     screenVm.updateContainerSize(it.width, it.height)
                                 }
-                                .pointerInput(dispW, dispH, serial) {
+                                .pointerInput(dispW, dispH, serial, screenVm.state.mousePassthrough, screenVm.state.isEditingMappings) {
                                     if (serial != null && dispW > 0 && dispH > 0) {
                                         awaitPointerEventScope {
                                             var active = false
@@ -116,16 +116,11 @@ fun App(
                                             while (true) {
                                                 val event = awaitPointerEvent()
                                                 val change = event.changes.firstOrNull() ?: continue
-                                                if (screenState.isEditingMappings) {
+                                                if (screenVm.state.isEditingMappings) {
                                                     change.consume()
                                                     continue
                                                 }
                                                 if (!active && event.type == PointerEventType.Press) {
-                                                    if (event.button == PointerButton.Secondary) {
-                                                        scope.launch { screenVm.handleBack() }
-                                                        change.consume()
-                                                        continue
-                                                    }
                                                     // Check mouse button bindings first
                                                     val mouseName = event.button?.let { mouseButtonName(it) }
                                                     if (mouseName != null && screenVm.handleKeyEvent(mouseName, true)) {
@@ -134,8 +129,8 @@ fun App(
                                                         change.consume()
                                                         continue
                                                     }
-                                                    // Mouse passthrough: simulate touch
-                                                    if (!screenState.mousePassthrough) {
+                                                    // Mouse passthrough: simulate touch (read from VM to avoid stale snapshot)
+                                                    if (!screenVm.state.mousePassthrough) {
                                                         change.consume()
                                                         continue
                                                     }

@@ -25,6 +25,8 @@ fun KeyBindDialog(
 ) {
     var key by remember { mutableStateOf(currentKeyName) }
     var capturing by remember { mutableStateOf(false) }
+    var captureNanos by remember { mutableLongStateOf(0L) }
+    var skipNextClick by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -41,12 +43,13 @@ fun KeyBindDialog(
                         if (name.isNotBlank() && name != "Unknown") {
                             key = name
                             capturing = false
+                            skipNextClick = true
                             true
                         } else false
                     } else false
                 }
                 .onPointerEvent(PointerEventType.Press) { event ->
-                    if (capturing) {
+                    if (capturing && System.nanoTime() - captureNanos > 80_000_000) {
                         val name = when (event.button) {
                             PointerButton.Primary -> "MouseLeft"
                             PointerButton.Secondary -> "MouseRight"
@@ -58,6 +61,7 @@ fun KeyBindDialog(
                         if (name != null) {
                             key = name
                             capturing = false
+                            skipNextClick = true
                         }
                     }
                 },
@@ -85,7 +89,10 @@ fun KeyBindDialog(
                 ) {
                     Text("按键", fontSize = 14.sp, modifier = Modifier.width(60.dp))
                     OutlinedButton(
-                        onClick = { capturing = true },
+                        onClick = {
+                            if (skipNextClick) { skipNextClick = false; return@OutlinedButton }
+                            capturing = true; captureNanos = System.nanoTime()
+                        },
                         modifier = Modifier.weight(1f),
                         colors = if (capturing) ButtonDefaults.outlinedButtonColors(
                             containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -129,6 +136,8 @@ fun JoystickKeyBindDialog(
     var right by remember { mutableStateOf(keyRight) }
     var r by remember { mutableFloatStateOf(radius) }
     var capturing by remember { mutableStateOf<String?>(null) }
+    var captureNanos by remember { mutableLongStateOf(0L) }
+    var skipNextClick by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -150,12 +159,14 @@ fun JoystickKeyBindDialog(
                                 "right" -> right = name
                             }
                             capturing = null
+                            skipNextClick = true
                             true
                         } else false
                     } else false
                 }
                 .onPointerEvent(PointerEventType.Press) { event ->
                     val dir = capturing ?: return@onPointerEvent
+                    if (System.nanoTime() - captureNanos < 80_000_000) return@onPointerEvent
                     val name = when (event.button) {
                         PointerButton.Primary -> "MouseLeft"
                         PointerButton.Secondary -> "MouseRight"
@@ -188,10 +199,10 @@ fun JoystickKeyBindDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                DirectionKeyRow(label = "↑ 上", key = up, isCapturing = capturing == "up") { capturing = "up" }
-                DirectionKeyRow(label = "↓ 下", key = down, isCapturing = capturing == "down") { capturing = "down" }
-                DirectionKeyRow(label = "← 左", key = left, isCapturing = capturing == "left") { capturing = "left" }
-                DirectionKeyRow(label = "→ 右", key = right, isCapturing = capturing == "right") { capturing = "right" }
+                DirectionKeyRow(label = "↑ 上", key = up, isCapturing = capturing == "up") { if (skipNextClick) { skipNextClick = false } else { capturing = "up"; captureNanos = System.nanoTime() } }
+                DirectionKeyRow(label = "↓ 下", key = down, isCapturing = capturing == "down") { if (skipNextClick) { skipNextClick = false } else { capturing = "down"; captureNanos = System.nanoTime() } }
+                DirectionKeyRow(label = "← 左", key = left, isCapturing = capturing == "left") { if (skipNextClick) { skipNextClick = false } else { capturing = "left"; captureNanos = System.nanoTime() } }
+                DirectionKeyRow(label = "→ 右", key = right, isCapturing = capturing == "right") { if (skipNextClick) { skipNextClick = false } else { capturing = "right"; captureNanos = System.nanoTime() } }
 
                 HorizontalDivider()
                 Text("摇杆范围", style = MaterialTheme.typography.titleSmall)

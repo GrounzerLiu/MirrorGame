@@ -41,7 +41,7 @@ data class ScreenUiState(
     val touchIndicators: List<TouchPoint> = emptyList(),
     val showTouchIndicator: Boolean = false,
     val mousePassthrough: Boolean = true,
-    val mouseModeToggleKey: String = "",
+    val mouseModeToggleKey: String = "F8",
 )
 
 data class TouchPoint(val x: Int, val y: Int, val pointerId: Int)
@@ -57,6 +57,20 @@ class ScreenViewModel(
     private var frameJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.Default)
     private var emptyPollCount = 0
+    private val prefsFile by lazy { java.io.File(configDir(), "prefs.txt") }
+    private val stateLock = Any()
+
+    init {
+        // Load persisted mouse mode toggle key
+        val saved = runCatching { prefsFile.readText().trim() }.getOrDefault("F8")
+        if (saved.isNotEmpty()) state = state.copy(mouseModeToggleKey = saved)
+    }
+
+    private fun configDir(): java.io.File {
+        val home = System.getProperty("user.home")
+        val xdg = System.getenv("XDG_CONFIG_HOME") ?: "$home/.config"
+        return java.io.File(xdg, "MirrorGame").also { it.mkdirs() }
+    }
 
     // Key-to-touch simulation state
     private val activeClickKeys = mutableSetOf<String>()
@@ -354,6 +368,7 @@ class ScreenViewModel(
 
     fun setMouseModeToggleKey(key: String) {
         state = state.copy(mouseModeToggleKey = key)
+        runCatching { prefsFile.writeText(key) }
     }
 
     private var wasShowingOverlays = false
