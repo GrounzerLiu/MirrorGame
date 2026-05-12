@@ -4,6 +4,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
@@ -57,7 +58,9 @@ fun App(
     projectVm: ProjectViewModel = remember { ProjectViewModel() },
     windowState: WindowState? = null,
 ) {
-    MaterialTheme {
+    val isDarkMode = isSystemInDarkTheme()
+
+    MaterialTheme(colorScheme = if (isDarkMode) darkColorScheme() else lightColorScheme()) {
         val screenState = screenVm.state
         val projectState = projectVm.state
 
