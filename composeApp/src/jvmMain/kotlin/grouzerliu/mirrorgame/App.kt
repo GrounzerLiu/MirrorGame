@@ -174,7 +174,12 @@ fun App(
                                                 } else if (active && event.type == PointerEventType.Release) {
                                                     val mouseName = event.button?.let { mouseButtonName(it) }
                                                     if (activeIsMouseJoy) {
-                                                        scope.launch { screenVm.handleMouseJoyUp() }
+                                                        val mjId = screenVm.state.launchedProject?.keyMappings?.find {
+                                                            it.type == MappingType.MOUSE_JOYSTICK && it.keyName == mouseName
+                                                        }?.id
+                                                        if (mjId != null) {
+                                                            scope.launch { screenVm.handleMouseJoyUp(mjId) }
+                                                        }
                                                     } else if (activeIsKeyBind && mouseName != null) {
                                                         scope.launch { screenVm.handleKeyEvent(mouseName, false) }
                                                     } else if (!activeIsKeyBind) {

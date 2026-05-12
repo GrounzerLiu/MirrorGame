@@ -95,14 +95,13 @@ class ScreenViewModel(
     private val joystickV = mutableMapOf<String, MutableList<String>>() // mappingId -> ["up"|"down", ...] stack, max 2
     private val pointerIdMap = mutableMapOf<String, Int>()
     private var nextPointerId = 0
-    // Mouse joystick state
-    private var activeMouseJoy: String? = null
-    private var mouseJoyPid = 0
-    private var lastMouseJoyX = 0
-    private var lastMouseJoyY = 0
+    // Mouse joystick state (supports multiple concurrent)
+    private val activeMouseJoys = mutableSetOf<String>()
+    private val mouseJoyPids = mutableMapOf<String, Int>()
+    private val lastMouseJoyPositions = mutableMapOf<String, Pair<Int, Int>>()
     private var trackedMouseX = 0f // container coords, updated by pointerInput
     private var trackedMouseY = 0f
-    val isMouseJoyActive: Boolean get() = activeMouseJoy != null
+    val isMouseJoyActive: Boolean get() = activeMouseJoys.isNotEmpty()
     private var awtKeyDispatcher: java.awt.KeyEventDispatcher? = null
 
     private fun activeTouchCount(): Int {
@@ -153,7 +152,9 @@ class ScreenViewModel(
         activeClickKeys.clear()
         joystickH.clear()
         joystickV.clear()
-        activeMouseJoy = null
+        activeMouseJoys.clear()
+        mouseJoyPids.clear()
+        lastMouseJoyPositions.clear()
     }
 
     fun startPolling() {
@@ -288,10 +289,9 @@ class ScreenViewModel(
     private fun handleMouseJoyKey(m: KeyMapping, isDown: Boolean): Boolean {
         if (isDown) {
             handleMouseJoyDown(m.id)
-            // Immediately MOVE to current mouse position (keyboard has no mouse event)
             handleMouseJoyMove(trackedMouseX, trackedMouseY)
         } else {
-            handleMouseJoyUp()
+            handleMouseJoyUp(m.id)
         }
         return true
     }
@@ -301,39 +301,43 @@ class ScreenViewModel(
         trackedMouseX = containerX; trackedMouseY = containerY
     }
 
-    // === Mouse joystick simulation ===
+    // === Mouse joystick simulation (supports multiple concurrent) ===
 
-    /** Start mouse joystick: touch DOWN at mapping center, then MOVE to computed position. */
+    /** Start mouse joystick: touch DOWN at mapping center. */
     fun handleMouseJoyDown(mappingId: String) {
         val mappings = state.launchedProject?.keyMappings ?: return
         val m = mappings.find { it.id == mappingId && it.type == MappingType.MOUSE_JOYSTICK } ?: return
         val vw = state.frameWidth; val vh = state.frameHeight
         if (vw <= 0 || vh <= 0) return
-        activeMouseJoy = mappingId
-        mouseJoyPid = acquirePointerId(mappingId)
+        if (!activeMouseJoys.add(mappingId)) return // already active
+        val pid = acquirePointerId(mappingId)
+        mouseJoyPids[mappingId] = pid
         val (cx, cy) = toVideoCoords(m.x, m.y, vw, vh)
         val wasActive = activeTouchCount()
-        if (wasActive == 0) handleTouchDown(cx, cy, mouseJoyPid)
-        else handlePointerDown(cx, cy, mouseJoyPid)
+        if (wasActive == 0) handleTouchDown(cx, cy, pid)
+        else handlePointerDown(cx, cy, pid)
     }
 
-    /** Update mouse joystick position from container coordinates. */
+    /** Update all active mouse joysticks from container coordinates. */
     fun handleMouseJoyMove(containerX: Float, containerY: Float) {
-        val mId = activeMouseJoy ?: return
+        if (activeMouseJoys.isEmpty()) return
         val mappings = state.launchedProject?.keyMappings ?: return
-        val m = mappings.find { it.id == mId } ?: return
-        val (x, y) = mouseJoyPos(m, containerX, containerY)
-        lastMouseJoyX = x; lastMouseJoyY = y
-        handleTouchMove(x, y, mouseJoyPid)
+        for (mId in activeMouseJoys) {
+            val m = mappings.find { it.id == mId } ?: continue
+            val pid = mouseJoyPids[mId] ?: continue
+            val (x, y) = mouseJoyPos(m, containerX, containerY)
+            lastMouseJoyPositions[mId] = Pair(x, y)
+            handleTouchMove(x, y, pid)
+        }
     }
 
-    /** End mouse joystick: touch UP at last known position (not mapping center). */
-    fun handleMouseJoyUp() {
-        val mId = activeMouseJoy ?: return
-        val x = lastMouseJoyX; val y = lastMouseJoyY
-        activeMouseJoy = null
-        val pid = releasePointerId(mId)
-        if (pid < 0) return
+    /** End mouse joystick: touch UP at last known position. */
+    fun handleMouseJoyUp(mappingId: String) {
+        if (!activeMouseJoys.remove(mappingId)) return
+        val pos = lastMouseJoyPositions.remove(mappingId)
+        val x = pos?.first ?: 0; val y = pos?.second ?: 0
+        val pid = mouseJoyPids.remove(mappingId) ?: return
+        releasePointerId(mappingId)
         val remaining = activeTouchCount()
         if (remaining == 0) handleTouchUp(x, y, pid)
         else handlePointerUp(x, y, pid)
