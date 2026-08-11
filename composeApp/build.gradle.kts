@@ -1,5 +1,18 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
+/** JavaCV classifier for the current OS/arch, e.g. windows-x86_64, linux-arm64. */
+fun ffmpegPlatformClassifier(): String {
+    val os = System.getProperty("os.name").lowercase()
+    val arch = System.getProperty("os.arch").lowercase()
+    return when {
+        os.contains("win") -> "windows-x86_64"
+        os.contains("mac") && arch.contains("aarch64") -> "macosx-arm64"
+        os.contains("mac") -> "macosx-x86_64"
+        os.contains("linux") && arch.contains("aarch64") -> "linux-arm64"
+        else -> "linux-x86_64"
+    }
+}
+
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.composeMultiplatform)
@@ -30,7 +43,7 @@ kotlin {
             implementation(libs.gson)
             implementation(libs.javacv)
             implementation(libs.ffmpeg)
-            implementation("org.bytedeco:ffmpeg:8.0.1-1.5.13:linux-x86_64")
+            implementation("org.bytedeco:ffmpeg:8.0.1-1.5.13:${ffmpegPlatformClassifier()}")
         }
     }
 }
